@@ -1,218 +1,229 @@
-## General tips for effective prompting
+# Working with Claude on Haptiscape
+### A Prompt Guide for Artists, Engineers & Collaborators
 
-### 1. Be clear and specific
-   - Clearly state your task or question at the beginning of your message.
-   - Provide context and details to help Claude understand your needs.
-   - Break complex tasks into smaller, manageable steps.
+This guide is for anyone working on this project — whether you're the original artist-engineer, a student picking it up for the first time, or a collaborator exploring it from a different angle. It's about how to get the most out of Claude as a technical partner, not just a code generator.
 
-   Bad prompt:
-   "Help me with a presentation."
+Claude works best here when treated as a curious engineering collaborator who can hold the context of the whole system, respond to ambiguity without needing everything resolved upfront, and follow the artistic intent of the work — not just the technical spec.
 
-   Good prompt:
-   "I need help creating a 10-slide presentation for our quarterly sales meeting. The presentation should cover our Q2 sales performance, top-selling products, and sales targets for Q3. Please provide an outline with key points for each slide."
+---
 
-   Why it's better: The good prompt provides specific details about the task, including the number of slides, the purpose of the presentation, and the key topics to be covered.
+## What this project is
 
-### 2. Use examples
-   - Provide examples of the kind of output you're looking for.
-   - If you want a specific format or style, show Claude an example.
+Haptiscape is a wearable haptic feedback system running on a Raspberry Pi Pico W. It listens to audio in real time and translates it into vibration patterns vibrating motors (LRA & ERM) motors, creating a physical sensation that mirrors what's being heard. The cello variant (`cello_haptic.py`) is designed for performance use — worn on the back, feeling the instrument from the inside.
 
-   Bad prompt:
-   "Write a professional email."
+The codebase spans:
+- **`cello_haptic.py`** — standalone cello-specific haptic engine with full diagnostics
+- **`haptic_engine.py`** — generic version for any audio source (voice, music, breath)
+- **`main.py`** — web-served system with Wi-Fi, UI, SD playback, and mode switching
+- **`main_mic.py`** — mic DSP engine with adaptive noise floor
+- **`main_sd.py`** — WAV file player with envelope-driven haptics
+- **`mode_manager.py`** — state machine for switching between input modes
+- **`interface.py`** — mobile web UI served from the Pico itself
+- **`config.py` / `secrets.py`** — hardware pin assignments and Wi-Fi credentials
 
-   Good prompt:
-   "I need to write a professional email to a client about a project delay. Here's a similar email I've sent before:
+---
 
-   'Dear [Client],
-   I hope this email finds you well. I wanted to update you on the progress of [Project Name]. Unfortunately, we've encountered an unexpected issue that will delay our completion date by approximately two weeks. We're working diligently to resolve this and will keep you updated on our progress.
-   Please let me know if you have any questions or concerns.
-   Best regards,
-   [Your Name]'
+## The collaboration model
 
-   Help me draft a new email following a similar tone and structure, but for our current situation where we're delayed by a month due to supply chain issues."
+Think of Claude as an engineer who has read all the code and is sitting next to you in the studio. You don't have to re-explain the project each time, but you do need to say enough that Claude knows which part you're working on and what you're trying.
 
-   Why it's better: The good prompt provides a concrete example of the desired style and tone, giving Claude a clear reference point for the new email.
+You're the artist and lead engineer. Claude responds to artistic intent as well as technical requirements. Saying "I want it to feel more like breathing and less like a metronome" is a valid instruction.
 
-### 3. Encourage thinking
-   - For complex tasks, ask Claude to "think step-by-step" or "explain your reasoning."
-   - This can lead to more accurate and detailed responses.
+---
 
-   Bad prompt:
-   "How can I improve team productivity?"
+## How to start a session
 
-   Good prompt:
-   "I'm looking to improve my team's productivity. Think through this step-by-step, considering the following factors:
-   1. Current productivity blockers (e.g., too many meetings, unclear priorities)
-   2. Potential solutions (e.g., time management techniques, project management tools)
-   3. Implementation challenges
-   4. Methods to measure improvement
+Always open with a brief context anchor. This doesn't need to be long — three things are enough:
 
-   For each step, please provide a brief explanation of your reasoning. Then summarize your ideas at the end."
+1. **What you're working on** — which file or subsystem
+2. **What state it's in** — does it work? is it broken? is it a new idea?
+3. **What you want** — explore, fix, build, explain, or rethink
 
-   Why it's better: The good prompt asks Claude to think through the problem systematically, providing a guided structure for the response and asking for explanations of the reasoning process.
+**Example:**
+```
+I'm working on haptic_engine.py — the adaptive noise floor tracker. It's working but 
+in a loud room it gates out too aggressively and the haptics drop completely for half 
+a second. I want to explore whether a slower gate release would help, or if there's 
+a different approach. Not looking for a final solution yet, just want to understand 
+the tradeoff.
+```
 
-### 4. Iterative refinement
-   - If Claude's first response isn't quite right, ask for clarifications or modifications.
-   - You can always say "That's close, but can you adjust X to be more like Y?"
+This is better than "fix my noise gate" because it tells Claude what you already know, what you've observed, and that you're in exploration mode — not execution mode.
 
-   Bad prompt:
-   "Make it better."
+---
 
-   Good prompt:
-   "That's a good start, but please refine it further. Make the following adjustments:
-   1. Make the tone more casual and friendly
-   2. Add a specific example of how our product has helped a customer
-   3. Shorten the second paragraph to focus more on the benefits rather than the features"
+## Keeping context across a session
 
-   Why it's better: The good prompt provides specific feedback and clear instructions for improvements, allowing Claude to make targeted adjustments.
+Claude doesn't remember previous conversations. Within a session, it does. A few habits help:
 
-### 5. Leverage Claude's knowledge
-   - Claude has broad knowledge across many fields. Don't hesitate to ask for explanations or background information.
-   - Be sure to include relevant context and details so that Claude's response is maximally targeted to be helpful.
+**State the constraints once, early.** If something must not change (e.g. "the PWM frequency must stay at 200Hz for the ERM motors", or "we can't use floats here because of memory"), say it once at the top of the conversation. Claude will hold it.
 
-   Bad prompt:
-   "What is marketing? How do I do it?"
+**Name the file you're in.** `haptic_engine.py` and `main_mic.py` have similar-sounding functions. Being explicit avoids confusion.
 
-   Good prompt:
-   "I'm developing a marketing strategy for a new eco-friendly cleaning product line. Can you provide an overview of current trends in green marketing? Please include:
-   1. Key messaging strategies that resonate with environmentally conscious consumers
-   2. Effective channels for reaching this audience
-   3. Examples of successful green marketing campaigns from the past year
-   4. Potential pitfalls to avoid (e.g., greenwashing accusations)
+**When switching focus, say so.** "Let's leave the noise floor for now and look at the SD playback in `main_sd.py`" resets the context cleanly.
 
-   This information will help me shape our marketing approach."
+**Paste the relevant code block.** If you've made changes since the session started, paste the current version. Claude's reference is the version it last saw.
 
-   Why it's better: The good prompt asks for specific, contextually relevant information that leverages Claude's broad knowledge base.
+---
 
-### 6. Use role-playing
-   - Ask Claude to adopt a specific role or perspective when responding.
+## Types of request — and how to phrase them
 
-   Bad prompt:
-   "Help me prepare for a negotiation."
+### Explore / experiment
 
-   Good prompt:
-   "You are a fabric supplier for my backpack manufacturing company. I'm preparing for a negotiation with this supplier to reduce prices by 10%. As the supplier, please provide:
-   1. Three potential objections to our request for a price reduction
-   2. For each objection, suggest a counterargument from my perspective
-   3. Two alternative proposals the supplier might offer instead of a straight price cut
+Use this when you're not sure what you want yet. Claude is good at laying out options without committing to one.
 
-   Then, switch roles and provide advice on how I, as the buyer, can best approach this negotiation to achieve our goal."
+```
+I'm thinking about adding a third haptic zone — maybe a motor at the shoulder 
+to represent bow position separately from volume. I don't know if this is 
+physically practical or musically meaningful. Can you help me think through 
+what data we'd use to drive it and what the feel might be?
+```
 
-   Why it's better: This prompt uses role-playing to explore multiple perspectives of the negotiation, providing more comprehensive preparation.
+Claude will explore the idea with you, flag the practical constraints (GPIO availability, power draw, added latency), and suggest approaches without assuming you've decided anything.
 
-## Task-specific tips and examples
+### Fix something specific
 
-### Content Creation
+Be precise about the symptom, not just the goal.
 
-1. **Specify your audience** — Tell Claude who the content is for.
+```
+In main_mic.py, the HapticMicEngine sometimes stops responding after about 
+10 minutes of use. The motors go silent and don't recover until reset. 
+I think it might be related to the adaptive bias drifting but I'm not sure. 
+Can you look at the process() method and tell me what might cause a silent 
+failure like this?
+```
 
-2. **Define the tone and style** — Describe the desired tone. If you have a style guide, mention key points from it.
+Describing the symptom ("stops responding after 10 minutes") is more useful than the goal ("make it more reliable") because it gives Claude something to trace.
 
-3. **Define output structure** — Provide a basic outline or list of points you want covered.
+### Build something new
 
-### Document summary and Q&A
+When you know what you want, describe the behaviour and the constraints together.
 
-1. **Be specific about what you want** — Ask for a summary of specific aspects or sections.
-2. **Use the document names** — Refer to attached documents by name.
-3. **Ask for citations** — Request that Claude cites specific parts of the document in its answers.
+```
+I want to add a "pulse mode" to the mic engine — when the audio is very steady 
+(low variance, sustained note), the haptics should gently pulse at around 1Hz 
+rather than holding steady. When the audio is dynamic (bow changes, vibrato), 
+it goes back to continuous. Keep it within the existing HapticMicEngine class. 
+MicroPython only — no external libraries.
+```
 
-### Data analysis and visualization
+The key ingredients: what it does, when it activates, what it reverts to, and any hard constraints.
 
-1. **Specify the desired format** — Clearly describe the format you want the data in.
+### Explain how something works
 
-### Brainstorming
+Useful when you're picking up someone else's code or returning after a break.
 
-1. Use Claude to generate ideas by asking for a list of possibilities or alternatives.
-2. Request responses in specific formats like bullet points, numbered lists, or tables for easier reading.
+```
+Can you walk me through how the zero-crossing rate calculation in haptic_engine.py 
+works, and why it's being used as a spectral proxy? I want to understand the 
+tradeoff vs doing a lightweight FFT.
+```
 
-## Troubleshooting and minimizing hallucinations
+Claude will explain the logic, the tradeoff, and the alternatives — without assuming you need a full DSP lecture.
 
-1. **Allow Claude to acknowledge uncertainty** — Tell Claude it's okay to say it doesn't know.
-2. **Break down complex tasks** — Work through large tasks step by step, one message at a time.
-3. **Include all contextual information** — Claude doesn't retain information from previous conversations, so include all necessary context each time.`;
+### Rethink the architecture
 
-export default function PromptingGuideEditor() {
-  const [content, setContent] = useState(initialContent);
-  const [saved, setSaved] = useState(false);
-  const textareaRef = useRef(null);
+Use this when something feels wrong at a higher level.
 
-  const handleChange = (e) => {
-    setContent(e.target.value);
-    setSaved(false);
-  };
+```
+The mode_manager.py is getting complicated. I'm now handling mic_enable, 
+mic_disable, mic_toggle, mic_sens_up, mic_sens_down as separate modes, and 
+it feels like mode strings were the wrong abstraction for settings changes. 
+Can you help me think about whether these should be commands rather than modes, 
+and what that refactor would look like?
+```
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(content);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
+Claude can step back from the code and think about the design.
 
-  const handleDownload = () => {
-    const blob = new Blob([content], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "claude-prompting-guide.md";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+---
 
-  const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
-  const lineCount = content.split("\n").length;
+## Hardware-specific context worth including
 
-  return (
-    <div style={{ fontFamily: "system-ui, sans-serif", height: "100vh", display: "flex", flexDirection: "column", background: "#f8f8f8" }}>
-      {/* Toolbar */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "10px 16px", background: "#fff", borderBottom: "1px solid #e0e0e0",
-        flexShrink: 0
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>📝 claude-prompting-guide.md</span>
-          <span style={{ fontSize: 11, color: "#aaa", background: "#f0f0f0", borderRadius: 4, padding: "2px 6px" }}>Markdown</span>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: "#999" }}>{wordCount} words · {lineCount} lines</span>
-          <button onClick={handleCopy} style={{
-            fontSize: 12, padding: "5px 12px", borderRadius: 6, border: "1px solid #ddd",
-            background: saved ? "#d4edda" : "#fff", color: saved ? "#155724" : "#444",
-            cursor: "pointer", transition: "all 0.2s"
-          }}>
-            {saved ? "✓ Copied!" : "Copy"}
-          </button>
-          <button onClick={handleDownload} style={{
-            fontSize: 12, padding: "5px 12px", borderRadius: 6, border: "none",
-            background: "#4a4af4", color: "#fff", cursor: "pointer", fontWeight: 500
-          }}>
-            ↓ Download
-          </button>
-        </div>
-      </div>
+When working on hardware behaviour, these details help Claude give accurate responses:
 
-      {/* Editor */}
-      <textarea
-        ref={textareaRef}
-        value={content}
-        onChange={handleChange}
-        spellCheck={false}
-        style={{
-          flex: 1,
-          width: "100%",
-          padding: "24px 32px",
-          fontSize: 13.5,
-          lineHeight: 1.75,
-          fontFamily: "'Fira Mono', 'Courier New', monospace",
-          color: "#222",
-          background: "#fff",
-          border: "none",
-          outline: "none",
-          resize: "none",
-          boxSizing: "border-box",
-          overflowY: "auto",
-          tabSize: 2,
-        }}
-      />
-    </div>
-  );
-}
+- **Pico W** — dual-core RP2040, MicroPython, no hardware float unit, 264KB RAM
+- **ERM motors** — respond to PWM duty cycle (intensity), not audio frequency directly. 50–300Hz envelope response. Carrier at 200Hz.
+- **ADC** — 12-bit native (0–4095), reads as 16-bit scaled (0–65535) in MicroPython. There's noise on the ADC reference — a flat-line reading often means wiring, not silence.
+- **PWM** — 16-bit duty (0–65535). `machine.PWM` freq and duty set independently.
+- **Wi-Fi** — STA mode preferred. AP fallback available but slower. The Pico W can only connect to 2.4GHz networks.
+- **SD card** — SPI bus, FAT filesystem, mounted at `/sd`. WAV files only. Stereo 16-bit at 44.1kHz works fine; higher sample rates may stutter.
+
+If Claude suggests something that doesn't fit these constraints, push back and it will adapt.
+
+---
+
+## Artistic direction and non-technical intent
+
+This system is for a performer. The haptic output should feel expressive, not mechanical. Some useful framings:
+
+**Talk about feel, not just values.** "The release feels too snappy — it cuts off rather than fading" is as valid as "reduce RELEASE_COEFF." Claude can translate between them.
+
+**Reference the performance context.** "During a long sustained note the buzz gets fatiguing" is useful. Claude will think about performer experience, not just signal accuracy.
+
+**Ambiguity is fine.** "I'm not sure if the stereo panning is actually adding anything" is a good prompt. Claude can help you think it through rather than waiting for a decision.
+
+**You can reject suggestions.** Claude will propose things. If the direction is wrong — too clean, too literal, wrong vibe — say so. "That's too algorithmic, I want something that feels more organic and unpredictable" is a complete instruction.
+
+---
+
+## Snippets and experiments
+
+When Claude produces code, it's a starting point, not a final answer. Some ways to work iteratively:
+
+**Ask for a diff, not a full rewrite.** "Show me just the changes to the `process()` method" keeps things legible when you're mid-session.
+
+**Ask for two versions.** "Give me a conservative version and a more experimental version" lets you compare approaches before committing.
+
+**Ask for comments on tradeoffs.** "What am I giving up with this approach?" is always a valid follow-up.
+
+**Ask what to test first.** "If I flash this, what should I check before playing with it live?" helps you validate in a sensible order.
+
+---
+
+## Things to avoid
+
+**Don't start a session with just a code block.** Claude will try to respond but won't know what you want from it — a review, a fix, an explanation, or something else entirely.
+
+**Don't ask for everything at once.** "Rewrite the whole haptic engine to be better" will produce something generic. Narrow the scope.
+
+**Don't assume Claude knows which version you're on.** If you've made changes, share them. The project files shown are a snapshot — Claude doesn't see live edits.
+
+**Don't ask Claude to decide the artistic direction.** It can offer options, lay out tradeoffs, and respond to your direction. But what the piece should feel like is yours to decide.
+
+---
+
+## Example opening prompts
+
+**Starting fresh on a feature:**
+```
+I'm in main_sd.py working on the SDPlayerSession. I want to add support for 
+looping — when a track finishes, it should restart from the beginning. Currently 
+it just returns 'done' and goes idle. What's the simplest way to add a loop flag?
+```
+
+**Returning after a break:**
+```
+I've been away from this for a few weeks. Can you give me a quick summary of 
+what haptic_engine.py does differently from main_mic.py, particularly around 
+the noise floor? I want to understand which one I should be developing on.
+```
+
+**Exploring a creative idea:**
+```
+I'm performing with this next month. I've been thinking about whether the two 
+motors should sometimes move independently rather than always panning together. 
+Like — left motor for bow pressure, right motor for bow position (near bridge 
+vs sul tasto). Is that architecturally feasible with the current ZCR approach 
+or would I need a different input signal?
+```
+
+**Debugging on the day:**
+```
+Quick one — I'm about to go on stage in 2 hours and the right motor isn't 
+responding. The left one works fine. The diagnostics in cello_haptic.py 
+show both motors ramping during startup. What should I check first?
+```
+
+---
+
+*This guide was written for Haptiscape. Adapt it as the project evolves.*
