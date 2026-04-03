@@ -78,6 +78,14 @@ Key tuning constants to know:
 | `config.py` | Pin assignments + Wi-Fi credential loading |
 | `sdcard.py` | SPI SD card driver |
 
+## Two ways of working
+
+**Modular** — the main system. Profiles define hardware and feel. Sources (mic, SD, etc.) share a common processing and output layer. Adding a new input or feel variation means adding a profile dict or a new source file. Nothing gets reinvented.
+
+**Standalone experiment** — a single self-contained file, like `cello_haptic.py`. No obligation to fit the modular structure. Use this when exploring a completely novel approach to input, feel, or interaction that isn't ready to be constrained yet. When something in it matures and is worth keeping, it gets absorbed into the modular system.
+
+Both are valid. Not everything needs to be modular immediately.
+
 ## Known design tensions to be aware of
 
 - `mode_manager.py` handles settings changes (sens_up, sens_down, mic_enable) as modes — this is acknowledged as potentially the wrong abstraction

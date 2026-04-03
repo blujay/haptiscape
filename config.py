@@ -1,25 +1,37 @@
-# Haptiscape hardware and network settings
+# ──────────────────────────────────────────────────────────────────────────────
+# HAPTISCAPE — System Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+# Global constants that apply to every profile and setup.
+# Hardware pins and feel parameters live in profiles.py instead.
+# ──────────────────────────────────────────────────────────────────────────────
 
-# PWM motor pins (GP15 and GP16 recommended for ERM drivers)
-MOTOR_PINS = (15, 16)
+# ACTIVE PROFILE
+# Change this to switch between hardware/feel setups.
+# Profiles are defined in profiles.py.
+ACTIVE_PROFILE = 'cello'
 
-# Microphone ADC input pin (GP26 for ADC0)
-MIC_PIN = 26
+# ──────────────────────────────────────────────────────────────────────────────
+# AUDIO SAMPLING
+# ──────────────────────────────────────────────────────────────────────────────
 
-# SD card SPI pins for the Pico (customize to your wiring)
-SD_PINS = {
-    'sck': 10,   # GP10 (SPI0 SCK)
-    'mosi': 11,  # GP11 (SPI0 MOSI)
-    'miso': 12,  # GP12 (SPI0 MISO)
-    'cs': 13     # GP13 (SPI0 CS)
-}
+SAMPLE_RATE_HZ = 8000   # ADC polling rate
+BUFFER_SIZE    = 64     # Samples per processing frame (~8ms at 8kHz)
+ADC_MIDPOINT   = 32768  # Centre of the 16-bit ADC range
+ADC_MAX        = 32767  # Max amplitude after centring
 
-# Main mode supported by the mic engine (single mic mode)
-MIC_PROFILES = ['mic']
+# ──────────────────────────────────────────────────────────────────────────────
+# OUTPUT
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Mobile hotspot credentials (set your own in secrets.py)
+PWM_MAX       = 65535   # 16-bit PWM ceiling — universal on Pico
+LED_PWM_FREQ  = 1000    # LED PWM frequency — high enough to avoid flicker
+
+# ──────────────────────────────────────────────────────────────────────────────
+# NETWORK
+# ──────────────────────────────────────────────────────────────────────────────
+
 try:
     from secrets import HOTSPOT_SSID, HOTSPOT_PASSWORD
 except ImportError:
-    HOTSPOT_SSID = 'Your_Hotspot_SSID'
+    HOTSPOT_SSID     = 'Your_Hotspot_SSID'
     HOTSPOT_PASSWORD = 'Your_Hotspot_Password'
