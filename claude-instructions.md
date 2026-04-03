@@ -9,9 +9,9 @@ Claude works best here when treated as a curious engineering collaborator who ca
 
 ## What this project is
 
-Haptiscape is a wearable haptic feedback system running on a Raspberry Pi Pico W. It listens to audio in real time and translates it into vibration patterns vibrating motors (LRA & ERM) motors, creating a physical sensation that mirrors what's being heard. The cello variant (`cello_haptic.py`) is designed for performance use — worn on the back, feeling the instrument from the inside.
+Haptiscape is a wearable haptic feedback system running on a Raspberry Pi Pico W. It listens to audio in real time from a variety of input sources (see section) and translates it into vibration patterns vibrating motors (LRA & ERM) motors, creating a physical sensation that mirrors what's being heard. The cello variant (`cello_haptic.py`) is designed for performance use — worn on the back, feeling the instrument from the inside.
 
-The codebase spans:
+### The codebase spans:
 - **`cello_haptic.py`** — standalone cello-specific haptic engine with full diagnostics
 - **`haptic_engine.py`** — generic version for any audio source (voice, music, breath)
 - **`main.py`** — web-served system with Wi-Fi, UI, SD playback, and mode switching
@@ -22,6 +22,16 @@ The codebase spans:
 - **`config.py` / `secrets.py`** — hardware pin assignments and Wi-Fi credentials
 
 ---
+
+### Input modes
+- **'Live mic audio'** - plays directly from a single or double mic for stereo effect. 
+- **'Stored audio'** - plays from a wav file stored on the onboard SD card. 
+- **'Unity timeline signal'** - plays from a set of stored wavs or patterns triggered by Unity 
+- **'Live data stream'** - plays from an interpretation of a data stream
+- **'Stored data'** - plays from a stored data source such as a spreadsheet or json file
+- **'Live Unity spatial'** - plays from a live spatial sound output 'headset listener'
+- **'Pattern library'** - plays from a selected haptic pulse pattern library
+- **'Generative audio'** - converts visual data into generative audio via camera feed
 
 ## The collaboration model
 
