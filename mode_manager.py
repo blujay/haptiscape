@@ -1,147 +1,110 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# HAPTISCAPE — Mode Manager
+# ──────────────────────────────────────────────────────────────────────────────
+# Owns the active input source and coordinates switching between modes.
+#
+# Sources are imported lazily — only loaded into RAM when first used.
+# This matters on a Pico with 264KB.
+#
+# MODES
+# ──────────────────────────────────────────────────────────────────────────────
+#   'idle'      — no source active, motors silent
+#   'mic'       — live microphone input
+#   'sd_N'      — SD card track N (e.g. 'sd_0', 'sd_1')
+# ──────────────────────────────────────────────────────────────────────────────
+
 import machine
 
+
 class ModeManager:
-    def __init__(self, mic_engine=None, sd_session=None, ui=None):
-        self.mic_engine = mic_engine
-        self.sd_session = sd_session
-        self.ui = ui
-        self.current_mode = 'idle'
 
-    def stop_current(self):
-        if self.current_mode == 'mic' and self.mic_engine is not None:
-            try:
-                self.mic_engine.shutdown()
-            except Exception:
-                pass
+    def __init__(self, profile):
+        self.profile = profile
+        self.mode    = 'idle'
+        self.source  = None
 
-        if self.current_mode.startswith('sd_') and self.sd_session is not None:
-            try:
-                self.sd_session.stop()
-            except Exception:
-                pass
+        # Lazily populated on first use
+        self._mic_source = None
+        self._sd_source  = None
+
+    # ── SWITCHING ─────────────────────────────────────────────────────────────
 
     def switch(self, new_mode):
-        if new_mode is None:
-            return self.current_mode
+        """Switch to a new mode. Stops the current source first."""
+        if new_mode is None or new_mode == self.mode:
+            return
 
         if new_mode == 'reset':
-            print('🔁 Reset requested')
             machine.reset()
 
-        if new_mode == self.current_mode:
-            return self.current_mode
-
-        self.stop_current()
+        self._stop_current()
 
         if new_mode == 'mic':
-            if self.mic_engine is not None:
-                if not getattr(self.mic_engine, 'calibrated', False):
-                    try:
-                        self.mic_engine.calibrate()
-                    except Exception as e:
-                        print('❌ Mic calibration failed:', e)
-                try:
-                    self.mic_engine.set_profile('guitar')
-                except Exception as e:
-                    print('❌ Mic set_profile failed:', e)
-                self.mic_engine.enable()
-                if self.ui is not None:
-                    self.mic_engine.sensitivity = self.ui.current_sens
-                print('🎤 Mode changed to: mic')
-            else:
-                print('⚠️ Mic mode requested but mic_engine is unavailable')
-
-        elif new_mode == 'mic_disable':
-            if self.mic_engine is not None:
-                self.mic_engine.disable()
-                print('🛑 Mic mode disabled by user')
-            self.current_mode = 'idle'
-            return self.current_mode
-
-        elif new_mode == 'mic_enable':
-            if self.mic_engine is not None:
-                self.mic_engine.enable()
-                if self.ui is not None:
-                    self.mic_engine.sensitivity = self.ui.current_sens
-                print('✅ Mic enabled by user')
-            new_mode = 'mic'
-
-        elif new_mode == 'mic_sens_up':
-            if self.mic_engine is not None:
-                self.mic_engine.change_sensitivity(0.1)
-            new_mode = self.current_mode
-
-        elif new_mode == 'mic_sens_down':
-            if self.mic_engine is not None:
-                self.mic_engine.change_sensitivity(-0.1)
-            new_mode = self.current_mode
-
-        elif new_mode == 'mic_record':
-            if self.mic_engine is not None:
-                self.mic_engine.start_recording()
-            new_mode = self.current_mode
-
-        elif new_mode == 'mic_stop_record':
-            if self.mic_engine is not None:
-                self.mic_engine.stop_recording()
-            new_mode = self.current_mode
-
-        elif new_mode == 'mic_playback':
-            if self.mic_engine is not None:
-                self.mic_engine.start_playback()
-            new_mode = self.current_mode
-
-        elif new_mode == 'mic_stop_playback':
-            if self.mic_engine is not None:
-                self.mic_engine.stop_playback()
-            new_mode = self.current_mode
-
-        elif new_mode == 'mic_toggle':
-            if self.mic_engine is not None and self.ui is not None:
-                self.mic_engine.enabled = self.ui.mic_enabled
-            new_mode = self.current_mode
-
-        elif new_mode == 'mic_sens_set':
-            if self.mic_engine is not None and self.ui is not None:
-                self.mic_engine.sensitivity = self.ui.current_sens
-            new_mode = self.current_mode
+            self._start_mic()
 
         elif new_mode.startswith('sd_'):
-            if self.sd_session is not None:
-                try:
-                    idx = int(new_mode.split('_', 1)[1])
-                    self.sd_session.load_track(idx)
-                    print(f'🎵 Mode changed to SD track {idx}')
-                except Exception as e:
-                    print('❌ SD mode initialization failed:', e)
-                    new_mode = 'idle'
-            else:
-                print('⚠️ SD mode requested but sd_session is unavailable')
+            try:
+                idx = int(new_mode.split('_', 1)[1])
+                self._start_sd(idx)
+            except (ValueError, IndexError):
+                print('[mode] Bad SD mode:', new_mode)
                 new_mode = 'idle'
 
         elif new_mode == 'idle':
-            print('⏹ Mode changed to idle')
+            print('[mode] Idle')
 
         else:
-            print('⚠️ Unknown mode requested, switching to idle:', new_mode)
+            print('[mode] Unknown mode:', new_mode)
             new_mode = 'idle'
 
-        self.current_mode = new_mode
-        return self.current_mode
+        self.mode = new_mode
+
+    # ── STEP — called every loop tick ─────────────────────────────────────────
 
     def step(self):
-        if self.current_mode == 'mic' and self.mic_engine is not None:
-            if self.mic_engine.enabled:
-                self.mic_engine.step()
-            else:
-                # Ensure motors are silent if mic has been disabled
-                try:
-                    self.mic_engine.shutdown()
-                except Exception:
-                    pass
+        """Run one tick of the active source. Call this in the main loop."""
+        if self.source is None:
+            return
 
-        elif self.current_mode.startswith('sd_') and self.sd_session is not None:
-            status = self.sd_session.step()
-            if status == 'done':
-                print('✅ SD playback complete, switching to idle')
-                self.switch('idle')
+        result = self.source.step()
+
+        if result == 'done':
+            print('[mode] Source finished — going idle')
+            self._stop_current()
+            self.mode = 'idle'
+
+    # ── INTERNAL ──────────────────────────────────────────────────────────────
+
+    def _stop_current(self):
+        if self.source is not None:
+            try:
+                self.source.stop()
+            except Exception as e:
+                print('[mode] Stop error:', e)
+            self.source = None
+
+    def _start_mic(self):
+        if self._mic_source is None:
+            from sources.mic import MicSource
+            self._mic_source = MicSource(self.profile)
+        try:
+            self._mic_source.start()
+            self.source = self._mic_source
+            print('[mode] Mic active')
+        except Exception as e:
+            print('[mode] Mic start error:', e)
+            self.source = None
+
+    def _start_sd(self, index):
+        if self._sd_source is None:
+            from sources.sd import SDSource
+            self._sd_source = SDSource(self.profile)
+        try:
+            if self._sd_source.load_track(index):
+                self._sd_source.start()
+                self.source = self._sd_source
+            else:
+                self.source = None
+        except Exception as e:
+            print('[mode] SD start error:', e)
+            self.source = None
