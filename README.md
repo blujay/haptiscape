@@ -75,4 +75,4 @@ Haptiscape is a performance instrument as much as a technical system. The haptic
 
 ## Working with Claude on this project
 
-See [`claude-instructions.md`](claude-instructions.md) for a prompt guide covering how to get the most out of Claude as a technical collaborator on this codebase — including how to phrase explorations, bug reports, build requests, and artistic direction.
+This repo includes a `CLAUDE.md` file that Claude reads automatically at the start of each session — covering project context, hardware constraints, and how the collaboration works.
