@@ -29,6 +29,7 @@ class SDSource:
     """
 
     def __init__(self, profile):
+        self._profile = profile
         self.output   = HapticOutput(profile)
         self.envelope_l = EnvelopeFollower(profile['feel'])
         self.envelope_r = EnvelopeFollower(profile['feel'])
@@ -59,12 +60,49 @@ class SDSource:
             self._file = None
         self.output.silence()
 
+    # ── SD REMOUNT ────────────────────────────────────────────────────────────
+
+    def _remount_sd(self):
+        """Unmount and remount the SD card to recover from a bus error."""
+        pins = self._profile['hardware'].get('sd')
+        if not pins:
+            return False
+        print('[sd] Remounting...')
+        try:
+            uos.umount('/sd')
+        except Exception:
+            pass
+        try:
+            import sdcard as _sdcard
+            spi = machine.SPI(1, baudrate=20_000_000,
+                              sck=machine.Pin(pins['sck']),
+                              mosi=machine.Pin(pins['mosi']),
+                              miso=machine.Pin(pins['miso']))
+            cs = machine.Pin(pins['cs'], machine.Pin.OUT)
+            sd = _sdcard.SDCard(spi, cs)
+            vfs = getattr(uos, 'VfsFat', None)
+            if vfs is None:
+                raise RuntimeError('VfsFat unavailable')
+            uos.mount(vfs(sd), '/sd')
+            print('[sd] Remounted OK')
+            return True
+        except Exception as e:
+            print('[sd] Remount failed:', e)
+            return False
+
     # ── TRACK LOADING ─────────────────────────────────────────────────────────
 
     def load_track(self, index):
         """Load a WAV file by index (sorted alphabetically from /sd)."""
         self.stop()
         try:
+            # Quick health-check — remount if the SD is unresponsive
+            try:
+                uos.listdir('/sd')
+            except OSError:
+                if not self._remount_sd():
+                    return False
+
             tracks = sorted([f for f in uos.listdir('/sd') if f.lower().endswith('.wav')])
             if not tracks or index >= len(tracks):
                 print('[sd] No track at index', index)
@@ -103,8 +141,9 @@ class SDSource:
         try:
             chunk = self._file.read(self._frame_size * CHUNK_FRAMES)
         except OSError as e:
-            print('[sd] Read error ({}) — stopping'.format(e.args[0] if e.args else e))
+            print('[sd] Read error ({}) — attempting remount'.format(e.args[0] if e.args else e))
             self.stop()
+            self._remount_sd()
             return 'done'
 
         if not chunk or self._bytes_read >= self._data_size:
