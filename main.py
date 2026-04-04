@@ -37,17 +37,6 @@ def boot():
     _mount_sd(profile)
     ip = _connect_wifi()
 
-    # Debug: check SD mount and list files
-    try:
-        if 'sd' in uos.listdir('/'):
-            all_files = uos.listdir('/sd')
-            wavs = [f for f in all_files if f.lower().endswith('.wav')]
-            print('[debug] SD mounted — all files:', all_files)
-        else:
-            print('[debug] SD not mounted')
-    except Exception as e:
-        print('[debug] SD check error:', e)
-
     print('=' * 44)
     if ip:
         print('   Ready — http://' + ip)
@@ -115,6 +104,98 @@ def _connect_wifi():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# STARTUP DIAGNOSTICS
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _run_motor_diagnostics(profile):
+    """Ramp each motor from 0 → 100% over 5 s with its LED, then silence."""
+    from output import HapticOutput
+
+    hw = profile['hardware']
+    n_motors = len(hw.get('motors', []))
+    if n_motors == 0:
+        print('[diag] No motors in profile — skipping motor test')
+        return
+
+    print('[diag] Motor test — ramping each motor 0→100% in 5 s')
+    out = HapticOutput(profile)
+
+    steps    = 100
+    step_s   = 5.0 / steps  # 50 ms per step
+
+    for idx in range(n_motors):
+        label = ('L', 'R', str(idx))[min(idx, 2)]
+        pan   = 0.0 if idx == 0 else 1.0   # full-left / full-right in stereo
+        print('[diag] Motor {} ...'.format(label))
+        for step in range(steps + 1):
+            level = step / steps
+            out.set(level, pan)
+            time.sleep(step_s)
+        out.silence()
+        time.sleep(0.2)
+
+    print('[diag] Motor test complete\n')
+    out.silence()
+    # Release PWM objects so sources can re-initialise the same pins
+    del out
+
+
+def _list_sd_tracks():
+    """Return a sorted list of WAV filenames on the SD card, or []."""
+    try:
+        if 'sd' not in uos.listdir('/'):
+            return []
+        all_files = uos.listdir('/sd')
+    except Exception as e:
+        print('[diag] SD read error:', e)
+        return []
+
+    print('\n[sd] /sd contents:')
+    for f in sorted(all_files):
+        print('       ', f)
+
+    wavs = sorted(f for f in all_files if f.lower().endswith('.wav'))
+    return wavs
+
+
+def _startup_track_select(manager, wavs):
+    """
+    Print the WAV track list and wait up to 5 s for a digit keypress.
+    Starts the chosen track, or defaults to mic mode.
+    """
+    if wavs:
+        print('\n[sd] WAV tracks:')
+        for i, name in enumerate(wavs):
+            print('  [{}] {}'.format(i, name))
+        limit = min(len(wavs), 10)
+        print('\n  Press 0–{} to play a track, or wait 5 s for mic mode...'.format(limit - 1))
+    else:
+        print('[diag] No WAV files found — starting mic mode')
+        manager.switch('mic')
+        return
+
+    deadline_ms = time.ticks_add(time.ticks_ms(), 5000)
+    while time.ticks_diff(deadline_ms, time.ticks_ms()) > 0:
+        try:
+            sel = select.select([sys.stdin], [], [], 0.1)
+            if sel and sel[0]:
+                key = sys.stdin.read(1)
+                if key.isdigit():
+                    idx = int(key)
+                    if idx < len(wavs):
+                        print('[diag] Playing track {}: {}'.format(idx, wavs[idx]))
+                        manager.switch('sd_{}'.format(idx))
+                        return
+                # Any non-digit key → fall through to mic
+                break
+        except Exception:
+            pass
+
+    print('[diag] Starting mic mode')
+    manager.switch('mic')
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # MAIN LOOP
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -154,6 +235,12 @@ def run(profile, ip):
     ui      = HapticUI(ip)
     manager = ModeManager(profile)
 
+    # ── Startup diagnostics ───────────────────────────────────────────────────
+    _run_motor_diagnostics(profile)
+    wavs = _list_sd_tracks()
+    _startup_track_select(manager, wavs)
+    # ─────────────────────────────────────────────────────────────────────────
+
     server = _start_server()
 
     while True:
@@ -176,18 +263,26 @@ def run(profile, ip):
             pass
 
         # Console shortcuts (for quick testing without the web UI)
+        # m=mic  i=idle  r=reset  0-9=sd track  l=list tracks
         try:
             sel = select.select([sys.stdin], [], [], 0)
             if sel and sel[0]:
                 key = sys.stdin.read(1).lower()
                 if key == 'm':
                     manager.switch('mic')
-                elif key == 's':
-                    manager.switch('sd_0')
                 elif key == 'i':
                     manager.switch('idle')
                 elif key == 'r':
                     machine.reset()
+                elif key == 'l':
+                    w = _list_sd_tracks()
+                    if w:
+                        print('[sd] WAV tracks:')
+                        for i, name in enumerate(w):
+                            print('  [{}] {}'.format(i, name))
+                elif key.isdigit():
+                    idx = int(key)
+                    manager.switch('sd_{}'.format(idx))
         except Exception:
             pass
 
