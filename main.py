@@ -177,7 +177,7 @@ def _startup_track_select(manager, wavs):
     deadline_ms = time.ticks_add(time.ticks_ms(), 5000)
     while time.ticks_diff(deadline_ms, time.ticks_ms()) > 0:
         try:
-            sel = select.select([sys.stdin], [], [], 0.1)
+            sel = select.select([sys.stdin], [], [], 0)
             if sel and sel[0]:
                 key = sys.stdin.read(1)
                 if key.isdigit():
