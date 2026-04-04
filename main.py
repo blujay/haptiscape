@@ -37,6 +37,17 @@ def boot():
     _mount_sd(profile)
     ip = _connect_wifi()
 
+    # Debug: check SD mount and list files
+    try:
+        if 'sd' in uos.listdir('/'):
+            all_files = uos.listdir('/sd')
+            wavs = [f for f in all_files if f.lower().endswith('.wav')]
+            print('[debug] SD mounted — all files:', all_files)
+        else:
+            print('[debug] SD not mounted')
+    except Exception as e:
+        print('[debug] SD check error:', e)
+
     print('=' * 44)
     if ip:
         print('   Ready — http://' + ip)
@@ -68,7 +79,10 @@ def _mount_sd(profile):
                           miso=machine.Pin(pins['miso']))
         cs  = machine.Pin(pins['cs'], machine.Pin.OUT)
         sd  = sdcard.SDCard(spi, cs)
-        uos.mount(uos.VfsFat(sd), '/sd')
+        vfs_cls = getattr(uos, 'VfsFat', None)
+        if vfs_cls is None:
+            raise RuntimeError('VfsFat not available in uos')
+        uos.mount(vfs_cls(sd), '/sd')
         wavs = [f for f in uos.listdir('/sd') if f.lower().endswith('.wav')]
         print('[sd] Mounted —', len(wavs), 'WAV file(s)')
     except Exception as e:
@@ -92,7 +106,7 @@ def _connect_wifi():
     for _ in range(20):
         if sta.isconnected():
             ip = sta.ifconfig()[0]
-            print('[wifi] Connected —', ip)
+            print('[wifi] Connected —', HOTSPOT_SSID, ip)
             return ip
         time.sleep(1)
 
@@ -104,17 +118,43 @@ def _connect_wifi():
 # MAIN LOOP
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _start_server():
+    addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
+    for attempt in range(8):
+        server = None
+        try:
+            server = socket.socket()
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server.bind(addr)
+            server.listen(1)
+            server.settimeout(0.05)
+            print('[server] Listening on port 80')
+            return server
+        except OSError as e:
+            err_no = e.args[0] if isinstance(e, OSError) and e.args else None
+            if err_no == 98:  # EADDRINUSE
+                print('[server] Port 80 already in use; retrying (%d/8)...' % (attempt + 1))
+                if server is not None:
+                    try:
+                        server.close()
+                    except Exception:
+                        pass
+                time.sleep(1)
+                continue
+            if server is not None:
+                try:
+                    server.close()
+                except Exception:
+                    pass
+            raise
+    raise OSError('[server] Failed to bind port 80 after retries')
+
+
 def run(profile, ip):
     ui      = HapticUI(ip)
     manager = ModeManager(profile)
 
-    server = socket.socket()
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(socket.getaddrinfo('0.0.0.0', 80)[0][-1])
-    server.listen(1)
-    server.settimeout(0.05)
-
-    print('[server] Listening on port 80')
+    server = _start_server()
 
     while True:
 
@@ -137,7 +177,8 @@ def run(profile, ip):
 
         # Console shortcuts (for quick testing without the web UI)
         try:
-            if select.select([sys.stdin], [], [], 0)[0]:
+            sel = select.select([sys.stdin], [], [], 0)
+            if sel and sel[0]:
                 key = sys.stdin.read(1).lower()
                 if key == 'm':
                     manager.switch('mic')

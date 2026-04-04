@@ -14,14 +14,28 @@ class HapticUI:
 
     def get_track_list(self):
         try:
-            return sorted([f for f in uos.listdir("/sd") if f.lower().endswith(".wav")])
-        except:
+            if 'sd' not in uos.listdir('/'):
+                return []
+            return sorted([f for f in uos.listdir('/sd') if f.lower().endswith('.wav')])
+        except Exception as e:
+            print('[ui] get_track_list error:', e)
             return []
 
     def get_html(self):
         tracks = self.get_track_list()
         track_html = "".join([f'<li class="file-item" onclick="playFile({i})"><span>{t}</span><span>▶</span></li>' for i, t in enumerate(tracks)])
-        
+        sd_state = "no-sd"
+        if tracks:
+            sd_state = "has-files"
+        else:
+            try:
+                if 'sd' in uos.listdir('/'):
+                    sd_state = "empty"
+                else:
+                    sd_state = "not-mounted"
+            except Exception:
+                sd_state = "error"
+
         # UI State Variables
         mic_active_class = "on" if self.mic_enabled else ""
         sens_val = int((self.current_sens - 0.2) / 2.8 * 100)
@@ -62,7 +76,7 @@ class HapticUI:
         </div>
 
         <div id="sd-panel" style="display: {sd_panel_display}; flex-direction: column;">
-            <ul style="list-style:none; padding:0;">{track_html if track_html else "<li>No Files</li>"}</ul>
+            <ul style="list-style:none; padding:0;">{track_html if track_html else ('<li>No WAV files in /sd</li>' if sd_state == 'empty' else ('<li>SD card not mounted</li>' if sd_state == 'not-mounted' else '<li>No Files</li>'))}</ul>
         </div>
     </div>
 
@@ -76,24 +90,37 @@ class HapticUI:
 """
 
     def handle_request(self, request):
+        new_mode = None
+
         if "GET /mic " in request or "GET /mic?" in request:
             self.current_mode = "mic"
+            new_mode = "mic"
+
         elif "GET /sd_list" in request:
             self.current_mode = "sd"
+            new_mode = None  # UI-only state; don't switch playback mode
+
         elif "GET /play_" in request:
             try:
                 idx = int(request.split('/play_')[1].split(' ')[0])
                 tracks = self.get_track_list()
                 if 0 <= idx < len(tracks):
                     self.current_mode = f"sd_{idx}"
-            except: pass
+                    new_mode = self.current_mode
+            except:
+                pass
+
         elif "GET /mic_toggle" in request:
             self.mic_enabled = not self.mic_enabled
+            new_mode = None
+
         elif "GET /mic_sens_set" in request:
             try:
                 val = request.split('val=')[1].split(' ')[0]
                 self.current_sens = 0.2 + (int(val) / 100) * 2.8
-            except: pass
-            
+            except:
+                pass
+            new_mode = None
+
         header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n"
-        return self.current_mode, header + self.get_html()
+        return new_mode, header + self.get_html()

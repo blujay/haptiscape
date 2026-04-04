@@ -126,6 +126,8 @@ class SDSource:
     # ── INTERNAL ──────────────────────────────────────────────────────────────
 
     def _parse_wav_header(self):
+        if not self._file:
+            raise RuntimeError('SDSource: no file open for WAV header parsing')
         f = self._file
         f.seek(22)
         self._channels = struct.unpack('<H', f.read(2))[0]
