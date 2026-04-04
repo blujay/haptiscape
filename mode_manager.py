@@ -66,7 +66,13 @@ class ModeManager:
         if self.source is None:
             return
 
-        result = self.source.step()
+        try:
+            result = self.source.step()
+        except Exception as e:
+            print('[mode] Source error — going idle:', e)
+            self._stop_current()
+            self.mode = 'idle'
+            return
 
         if result == 'done':
             print('[mode] Source finished — going idle')

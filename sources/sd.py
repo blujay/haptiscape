@@ -100,7 +100,12 @@ class SDSource:
         if self._bytes_read > expected_bytes + (self._byte_rate // 4):
             return 'playing'
 
-        chunk = self._file.read(self._frame_size * CHUNK_FRAMES)
+        try:
+            chunk = self._file.read(self._frame_size * CHUNK_FRAMES)
+        except OSError as e:
+            print('[sd] Read error ({}) — stopping'.format(e.args[0] if e.args else e))
+            self.stop()
+            return 'done'
 
         if not chunk or self._bytes_read >= self._data_size:
             self.stop()
