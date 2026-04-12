@@ -24,6 +24,12 @@ from mode_manager import ModeManager
 from interface import HapticUI
 
 
+class RestartRequest(Exception):
+    """Raised by the BOOTSEL restart hold. Caught at the entry point to
+    re-run boot() + run() without dropping the USB/Thonny connection."""
+    pass
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # BOOT
 # ──────────────────────────────────────────────────────────────────────────────
@@ -333,14 +339,14 @@ def run(profile):
                 elif time.ticks_diff(time.ticks_ms(), _bootsel_start) >= 2000:
                     _bootsel_consumed = True   # Don't re-fire while still held
                     if _haptic_halted:
-                        # Wait for release before reset.
-                        # BOOTSEL is still physically held at the 2 s threshold —
-                        # if the Pico resets while it's down it enters USB bootloader.
+                        # Wait for release before restarting.
+                        # If we raised immediately the button would still be held
+                        # when boot() re-runs and re-trigger the 2 s timer at once.
                         while rp2.bootsel_button():
                             time.sleep(0.05)
-                        time.sleep(0.1)   # Settle before reset
-                        print('[bootsel] Restarting...')
-                        machine.reset()
+                        time.sleep(0.1)
+                        print('[bootsel] Restarting application...')
+                        raise RestartRequest()
                     else:
                         print('[bootsel] Long hold — haptics halted. Hold again to restart.')
                         manager.switch('idle')
@@ -361,5 +367,11 @@ def run(profile):
 # ──────────────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    profile = boot()
-    run(profile)
+    while True:
+        try:
+            profile = boot()
+            run(profile)
+        except RestartRequest:
+            # Software restart — USB/Thonny connection stays alive.
+            # boot() and run() re-initialise everything from scratch.
+            print('[system] --- RESTART ---\n')
