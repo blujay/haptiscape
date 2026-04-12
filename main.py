@@ -2,14 +2,16 @@
 # HAPTISCAPE — System Entry Point
 # ──────────────────────────────────────────────────────────────────────────────
 # Boot sequence:
-#   1. Load active profile from profiles.py
+#   1. Start Wi-Fi (non-blocking) + light onboard LED as "I'm alive"
 #   2. Mount SD card (if profile has one)
-#   3. Connect to Wi-Fi
-#   4. Start web server + mode manager loop
+#   3. Run motor diagnostics (Wi-Fi connects in the background during this)
+#   4. Await Wi-Fi result — offline mode if not up yet, mic still starts either way
+#   5. Start web server + mode manager loop
 # ──────────────────────────────────────────────────────────────────────────────
 
 import machine
 import network
+import rp2
 import socket
 import select
 import sys
@@ -20,6 +22,12 @@ from config import ACTIVE_PROFILE, HOTSPOT_SSID, HOTSPOT_PASSWORD
 from profiles import PROFILES
 from mode_manager import ModeManager
 from interface import HapticUI
+
+
+class RestartRequest(Exception):
+    """Raised by the BOOTSEL restart hold. Caught at the entry point to
+    re-run boot() + run() without dropping the USB/Thonny connection."""
+    pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -35,16 +43,15 @@ def boot():
     print('Profile:', ACTIVE_PROFILE)
 
     _mount_sd(profile)
-    ip = _connect_wifi()
 
-    print('=' * 44)
-    if ip:
-        print('   Ready — http://' + ip)
-    else:
-        print('   Ready — offline mode')
-    print('=' * 44 + '\n')
+    # Kick off Wi-Fi early (non-blocking). Also wakes the CYW43 chip,
+    # which is required before the onboard LED can be driven on a Pico W.
+    _begin_wifi()
 
-    return profile, ip
+    # "I'm alive" — onboard LED on as soon as CYW43 is up
+    machine.Pin("LED", machine.Pin.OUT).on()
+
+    return profile
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -82,25 +89,38 @@ def _mount_sd(profile):
 # WI-FI
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _connect_wifi():
-    print('[wifi] Connecting...')
+def _begin_wifi():
+    """Start Wi-Fi connection without waiting. Returns immediately."""
+    print('[wifi] Connecting to', HOTSPOT_SSID, '...')
     sta = network.WLAN(network.STA_IF)
     ap  = network.WLAN(network.AP_IF)
     if ap.active():
         ap.active(False)
-
     sta.active(True)
     sta.connect(HOTSPOT_SSID, HOTSPOT_PASSWORD)
 
-    for _ in range(20):
+
+def _await_wifi(timeout_s=8):
+    """
+    Poll for an active Wi-Fi connection for up to timeout_s seconds.
+    Returns the IP string on success, or None for offline mode.
+    Call this after _begin_wifi() has had a chance to connect in the background.
+    """
+    sta = network.WLAN(network.STA_IF)
+    for _ in range(timeout_s):
         if sta.isconnected():
             ip = sta.ifconfig()[0]
             print('[wifi] Connected —', HOTSPOT_SSID, ip)
             return ip
         time.sleep(1)
-
-    print('[wifi] Failed — offline mode')
+    print('[wifi] No connection — offline mode')
     return None
+
+
+def _connect_wifi():
+    """Blocking reconnect — used by the web UI 'reconnect' command."""
+    _begin_wifi()
+    return _await_wifi(timeout_s=15)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -108,7 +128,7 @@ def _connect_wifi():
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _run_motor_diagnostics(profile):
-    """Ramp each motor from 0 → 100% over 5 s with its LED, then silence."""
+    """Ramp each motor from 0 → 100% over 2 s with its LED, then silence."""
     from output import HapticOutput
 
     hw = profile['hardware']
@@ -117,11 +137,11 @@ def _run_motor_diagnostics(profile):
         print('[diag] No motors in profile — skipping motor test')
         return
 
-    print('[diag] Motor test — ramping each motor 0→100% in 5 s')
+    print('[diag] Motor test — ramping each motor 0→100% in 2 s')
     out = HapticOutput(profile)
 
-    steps    = 100
-    step_s   = 5.0 / steps  # 50 ms per step
+    steps  = 100
+    step_s = 2.0 / steps  # 20 ms per step
 
     for idx in range(n_motors):
         label = ('L', 'R', str(idx))[min(idx, 2)]
@@ -231,17 +251,37 @@ def _start_server():
     raise OSError('[server] Failed to bind port 80 after retries')
 
 
-def run(profile, ip):
-    ui      = HapticUI(ip)
+def run(profile):
     manager = ModeManager(profile)
 
-    # ── Startup diagnostics ───────────────────────────────────────────────────
+    # ── Motor diagnostics ─────────────────────────────────────────────────────
+    # Wi-Fi is connecting in the background during this ~4 s window.
     _run_motor_diagnostics(profile)
+
+    # ── Wi-Fi result ──────────────────────────────────────────────────────────
+    # By now Wi-Fi has usually finished. Allow up to 5 more seconds if needed.
+    ip = _await_wifi(timeout_s=5)
+
+    print('=' * 44)
+    if ip:
+        print('   Ready — http://' + ip)
+    else:
+        print('   Ready — offline mode (mic still active)')
+    print('=' * 44 + '\n')
+
+    # ── Mode select ───────────────────────────────────────────────────────────
     wavs = _list_sd_tracks()
     _startup_track_select(manager, wavs)
-    # ─────────────────────────────────────────────────────────────────────────
 
+    # ── Web server (binds even in offline mode; only reachable if Wi-Fi is up) ─
     server = _start_server()
+    ui     = HapticUI(ip)
+
+    # ── BOOTSEL button state ──────────────────────────────────────────────────
+    # Long hold (≥2 s): first → silence all haptics; second → machine.reset()
+    _bootsel_start    = None   # ticks_ms when press began, or None
+    _bootsel_consumed = False  # True = action fired this hold; wait for release
+    _haptic_halted    = False  # True = silenced by BOOTSEL, waiting for reset hold
 
     while True:
 
@@ -258,6 +298,7 @@ def run(profile, ip):
                 ui = HapticUI(ip)
             elif new_mode:
                 manager.switch(new_mode)
+                _haptic_halted = False   # Manual mode change clears halted state
 
         except OSError:
             pass
@@ -270,6 +311,7 @@ def run(profile, ip):
                 key = sys.stdin.read(1).lower()
                 if key == 'm':
                     manager.switch('mic')
+                    _haptic_halted = False
                 elif key == 'i':
                     manager.switch('idle')
                 elif key == 'r':
@@ -283,8 +325,32 @@ def run(profile, ip):
                 elif key.isdigit():
                     idx = int(key)
                     manager.switch('sd_{}'.format(idx))
+                    _haptic_halted = False
         except Exception:
             pass
+
+        # ── BOOTSEL long-hold detection ───────────────────────────────────────
+        # Long hold (≥2 s) while running → silence everything (idle)
+        # Short press while halted       → restart application
+        if rp2.bootsel_button():
+            if not _bootsel_consumed:
+                if _bootsel_start is None:
+                    _bootsel_start = time.ticks_ms()
+                elif time.ticks_diff(time.ticks_ms(), _bootsel_start) >= 2000:
+                    _bootsel_consumed = True   # Don't re-fire while still held
+                    if not _haptic_halted:
+                        print('[bootsel] Long hold — haptics halted. Press to restart.')
+                        manager.switch('idle')
+                        _haptic_halted = True
+        else:
+            # Button released — check for short press while halted
+            if _haptic_halted and _bootsel_start is not None and not _bootsel_consumed:
+                print('[bootsel] Restarting application...')
+                _bootsel_start    = None
+                _bootsel_consumed = False
+                raise RestartRequest()
+            _bootsel_start    = None
+            _bootsel_consumed = False
 
         # Run active source
         manager.step()
@@ -297,5 +363,11 @@ def run(profile, ip):
 # ──────────────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    profile, ip = boot()
-    run(profile, ip)
+    while True:
+        try:
+            profile = boot()
+            run(profile)
+        except RestartRequest:
+            # Software restart — USB/Thonny connection stays alive.
+            # boot() and run() re-initialise everything from scratch.
+            print('[system] --- RESTART ---\n')
