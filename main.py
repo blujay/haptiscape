@@ -228,7 +228,7 @@ def _start_server():
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server.bind(addr)
             server.listen(1)
-            server.settimeout(0.05)
+            server.settimeout(0.01)   # 10ms — keeps main loop responsive for mic
             print('[server] Listening on port 80')
             return server
         except OSError as e:
@@ -355,7 +355,7 @@ def run(profile):
         # Run active source
         manager.step()
 
-        time.sleep(0.03)
+        time.sleep(0.001)   # step() handles its own timing; this just yields briefly
 
 
 # ──────────────────────────────────────────────────────────────────────────────
