@@ -333,12 +333,13 @@ def run(profile):
                 elif time.ticks_diff(time.ticks_ms(), _bootsel_start) >= 2000:
                     _bootsel_consumed = True   # Don't re-fire while still held
                     if _haptic_halted:
-                        print('[bootsel] Release button to restart...')
-                        # Wait for release before reset — if BOOTSEL is held
-                        # during a Pico reset it enters USB bootloader mode.
+                        # Wait for release before reset.
+                        # BOOTSEL is still physically held at the 2 s threshold —
+                        # if the Pico resets while it's down it enters USB bootloader.
                         while rp2.bootsel_button():
                             time.sleep(0.05)
                         time.sleep(0.1)   # Settle before reset
+                        print('[bootsel] Restarting...')
                         machine.reset()
                     else:
                         print('[bootsel] Long hold — haptics halted. Hold again to restart.')
