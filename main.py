@@ -63,26 +63,34 @@ def _mount_sd(profile):
         return
 
     pins = profile['hardware']['sd']
-    print('[sd] Mounting...')
+    print('[sd] Mounting on SPI1 — SCK:{sck} MOSI:{mosi} MISO:{miso} CS:{cs}'.format(**pins))
     try:
         if 'sd' in uos.listdir('/'):
             print('[sd] Already mounted')
             return
         import sdcard
-        spi = machine.SPI(1, baudrate=40_000_000,
+        # SPI starts at a conservative rate; SDCard.init_card reinitialises
+        # at 100 kHz for the SD handshake then steps up to its data rate.
+        spi = machine.SPI(1, baudrate=400_000,
                           sck=machine.Pin(pins['sck']),
                           mosi=machine.Pin(pins['mosi']),
                           miso=machine.Pin(pins['miso']))
         cs  = machine.Pin(pins['cs'], machine.Pin.OUT)
-        sd  = sdcard.SDCard(spi, cs)
+        sd  = sdcard.SDCard(spi, cs, baudrate=4_000_000)
         vfs_cls = getattr(uos, 'VfsFat', None)
         if vfs_cls is None:
             raise RuntimeError('VfsFat not available in uos')
         uos.mount(vfs_cls(sd), '/sd')
-        wavs = [f for f in uos.listdir('/sd') if f.lower().endswith('.wav')]
-        print('[sd] Mounted —', len(wavs), 'WAV file(s)')
+        all_files = uos.listdir('/sd')
+        wavs = [f for f in all_files if f.lower().endswith('.wav')]
+        print('[sd] Mounted — {} file(s) total, {} WAV'.format(len(all_files), len(wavs)))
+        if all_files and not wavs:
+            print('[sd] Files found but none are .wav:')
+            for f in sorted(all_files):
+                print('       ', f)
     except Exception as e:
-        print('[sd] Mount failed:', e)
+        print('[sd] Mount failed:', type(e).__name__, e)
+        sys.print_exception(e)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
