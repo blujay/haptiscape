@@ -11,6 +11,7 @@
 
 import machine
 import network
+import rp2
 import socket
 import select
 import sys
@@ -270,6 +271,12 @@ def run(profile):
     server = _start_server()
     ui     = HapticUI(ip)
 
+    # ── BOOTSEL button state ──────────────────────────────────────────────────
+    # Long hold (≥2 s): first → silence all haptics; second → machine.reset()
+    _bootsel_start    = None   # ticks_ms when press began, or None
+    _bootsel_consumed = False  # True = action fired this hold; wait for release
+    _haptic_halted    = False  # True = silenced by BOOTSEL, waiting for reset hold
+
     while True:
 
         # Web request
@@ -285,6 +292,7 @@ def run(profile):
                 ui = HapticUI(ip)
             elif new_mode:
                 manager.switch(new_mode)
+                _haptic_halted = False   # Manual mode change clears halted state
 
         except OSError:
             pass
@@ -297,6 +305,7 @@ def run(profile):
                 key = sys.stdin.read(1).lower()
                 if key == 'm':
                     manager.switch('mic')
+                    _haptic_halted = False
                 elif key == 'i':
                     manager.switch('idle')
                 elif key == 'r':
@@ -310,8 +319,30 @@ def run(profile):
                 elif key.isdigit():
                     idx = int(key)
                     manager.switch('sd_{}'.format(idx))
+                    _haptic_halted = False
         except Exception:
             pass
+
+        # ── BOOTSEL long-hold detection ───────────────────────────────────────
+        # Hold ≥2 s while running  → silence everything (idle)
+        # Hold ≥2 s while halted   → machine.reset() (re-runs main.py)
+        if rp2.bootsel_button():
+            if not _bootsel_consumed:
+                if _bootsel_start is None:
+                    _bootsel_start = time.ticks_ms()
+                elif time.ticks_diff(time.ticks_ms(), _bootsel_start) >= 2000:
+                    _bootsel_consumed = True   # Don't re-fire while still held
+                    if _haptic_halted:
+                        print('[bootsel] Long hold — restarting...')
+                        machine.reset()
+                    else:
+                        print('[bootsel] Long hold — haptics halted. Hold again to restart.')
+                        manager.switch('idle')
+                        _haptic_halted = True
+        else:
+            # Button released — reset tracking so next hold is a clean start
+            _bootsel_start    = None
+            _bootsel_consumed = False
 
         # Run active source
         manager.step()
