@@ -330,29 +330,25 @@ def run(profile):
             pass
 
         # ── BOOTSEL long-hold detection ───────────────────────────────────────
-        # Hold ≥2 s while running  → silence everything (idle)
-        # Hold ≥2 s while halted   → machine.reset() (re-runs main.py)
+        # Long hold (≥2 s) while running → silence everything (idle)
+        # Short press while halted       → restart application
         if rp2.bootsel_button():
             if not _bootsel_consumed:
                 if _bootsel_start is None:
                     _bootsel_start = time.ticks_ms()
                 elif time.ticks_diff(time.ticks_ms(), _bootsel_start) >= 2000:
                     _bootsel_consumed = True   # Don't re-fire while still held
-                    if _haptic_halted:
-                        # Wait for release before restarting.
-                        # If we raised immediately the button would still be held
-                        # when boot() re-runs and re-trigger the 2 s timer at once.
-                        while rp2.bootsel_button():
-                            time.sleep(0.05)
-                        time.sleep(0.1)
-                        print('[bootsel] Restarting application...')
-                        raise RestartRequest()
-                    else:
-                        print('[bootsel] Long hold — haptics halted. Hold again to restart.')
+                    if not _haptic_halted:
+                        print('[bootsel] Long hold — haptics halted. Press to restart.')
                         manager.switch('idle')
                         _haptic_halted = True
         else:
-            # Button released — reset tracking so next hold is a clean start
+            # Button released — check for short press while halted
+            if _haptic_halted and _bootsel_start is not None and not _bootsel_consumed:
+                print('[bootsel] Restarting application...')
+                _bootsel_start    = None
+                _bootsel_consumed = False
+                raise RestartRequest()
             _bootsel_start    = None
             _bootsel_consumed = False
 
