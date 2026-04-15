@@ -30,7 +30,7 @@ class MicSource:
     SAMPLE_US = 100   # Microseconds between samples (~10 kHz)
     CALIB_N   = 500   # Samples used for initial bias calibration
 
-    def __init__(self, profile):
+    def __init__(self, profile, sensitivity=None):
         hw   = profile['hardware']
         feel = profile['feel']
 
@@ -53,7 +53,7 @@ class MicSource:
             self.leds.append(led)
 
         # DSP parameters — all sourced from feel profile
-        self.sensitivity  = feel['sensitivity']
+        self.sensitivity  = sensitivity if sensitivity is not None else feel['noise_gate']
         self.bias_coeff   = feel['auto_bias_coeff']
         self.fb_damp      = feel['feedback_damp']
         self.open_thr     = feel['open_threshold']

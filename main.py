@@ -262,6 +262,9 @@ def run(profile):
     # By now Wi-Fi has usually finished. Allow up to 5 more seconds if needed.
     ip = _await_wifi(timeout_s=5)
 
+    ui = HapticUI(ip)
+    manager = ModeManager(profile, ui)
+
     print('=' * 44)
     if ip:
         print('   Ready — http://' + ip)
@@ -272,10 +275,10 @@ def run(profile):
     # ── Mode select ───────────────────────────────────────────────────────────
     wavs = _list_sd_tracks()
     _startup_track_select(manager, wavs)
+    ui.current_mode = manager.mode
 
     # ── Web server (binds even in offline mode; only reachable if Wi-Fi is up) ─
     server = _start_server()
-    ui     = HapticUI(ip)
 
     # ── BOOTSEL button state ──────────────────────────────────────────────────
     # Long hold (≥2 s): first → silence all haptics; second → machine.reset()
@@ -296,8 +299,10 @@ def run(profile):
             if new_mode == 'reconnect':
                 ip = _connect_wifi()
                 ui = HapticUI(ip)
+                manager.ui = ui
             elif new_mode:
                 manager.switch(new_mode)
+                ui.current_mode = manager.mode
                 _haptic_halted = False   # Manual mode change clears halted state
 
         except OSError:

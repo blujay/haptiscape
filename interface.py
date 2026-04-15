@@ -51,13 +51,17 @@ class HapticUI:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         :root {{ --bg: #05070a; --accent: #00d2ff; --text: #ffffff; }}
-        body {{ background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }}
+        body {{ background: var(--bg); color: var(--text); font-family: sans-serif; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; -webkit-tap-highlight-color: transparent; }}
         .app {{ background: rgba(255,255,255,0.05); padding: 20px; border-radius: 20px; width: 90%; max-width: 400px; border: 1px solid rgba(255,255,255,0.1); }}
-        .tab-btn {{ background: #1e293b; color: white; border: none; padding: 10px; border-radius: 10px; flex: 1; cursor: pointer; }}
+        .tab-btn {{ background: #1e293b; color: white; border: none; padding: 15px 20px; border-radius: 10px; flex: 1; cursor: pointer; font-size: 16px; touch-action: manipulation; }}
         .btn-active {{ background: var(--accent); color: black; }}
-        #mic-btn {{ width: 100px; height: 100px; border-radius: 50%; border: 4px solid #333; background: #111; color: white; margin: 20px auto; display: block; }}
+        #mic-btn {{ width: 120px; height: 120px; border-radius: 50%; border: 4px solid #333; background: #111; color: white; margin: 20px auto; display: block; font-size: 14px; touch-action: manipulation; }}
         #mic-btn.on {{ border-color: #00ff87; box-shadow: 0 0 15px #00ff87; }}
-        .file-item {{ background: rgba(255,255,255,0.05); margin: 5px 0; padding: 10px; border-radius: 10px; display: flex; justify-content: space-between; cursor: pointer; }}
+        .file-item {{ background: rgba(255,255,255,0.05); margin: 5px 0; padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; cursor: pointer; touch-action: manipulation; }}
+        .slider-container {{ margin: 20px 0; text-align: center; }}
+        .slider-label {{ font-size: 14px; margin-bottom: 10px; }}
+        input[type="range"] {{ width: 80%; height: 10px; -webkit-appearance: none; background: #333; border-radius: 5px; touch-action: manipulation; }}
+        input[type="range"]::-webkit-slider-thumb {{ -webkit-appearance: none; width: 20px; height: 20px; background: var(--accent); border-radius: 50%; cursor: pointer; }}
     </style>
 </head>
 <body>
@@ -72,7 +76,10 @@ class HapticUI:
 
         <div id="mic-panel" style="display: {mic_panel_display}; flex-direction: column; text-align: center;">
             <button id="mic-btn" class="{mic_active_class}" onclick="location.href='/mic_toggle'">Toggle Mic</button>
-            <input type="range" min="0" max="100" value="{sens_val}" onchange="location.href='/mic_sens_set?val='+this.value">
+            <div class="slider-container">
+                <div class="slider-label">Mic Sensitivity: {self.current_sens:.1f}</div>
+                <input type="range" min="0" max="100" value="{sens_val}" onchange="location.href='/mic_sens_set?val='+this.value">
+            </div>
         </div>
 
         <div id="sd-panel" style="display: {sd_panel_display}; flex-direction: column;">
@@ -120,7 +127,10 @@ class HapticUI:
                 self.current_sens = 0.2 + (int(val) / 100) * 2.8
             except:
                 pass
-            new_mode = None
+            if self.current_mode == "mic":
+                new_mode = "mic"  # Restart mic with new sensitivity
+            else:
+                new_mode = None
 
         header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n"
         return new_mode, header + self.get_html()

@@ -18,8 +18,9 @@ import machine
 
 class ModeManager:
 
-    def __init__(self, profile):
+    def __init__(self, profile, ui=None):
         self.profile = profile
+        self.ui = ui
         self.mode    = 'idle'
         self.source  = None
 
@@ -90,10 +91,10 @@ class ModeManager:
             self.source = None
 
     def _start_mic(self):
-        if self._mic_source is None:
-            from sources.mic import MicSource
-            self._mic_source = MicSource(self.profile)
+        from sources.mic import MicSource
+        sensitivity = self.ui.current_sens if self.ui else None
         try:
+            self._mic_source = MicSource(self.profile, sensitivity=sensitivity)
             self._mic_source.start()
             self.source = self._mic_source
             print('[mode] Mic active')
